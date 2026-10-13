@@ -61,6 +61,40 @@ class SampleSubmissionsTest {
     }
 
     @Test
+    void emptyOrGarbageSubmissionScoresLowAndIsntFalselyPraised() {
+        // Regression test: a near-empty class used to score 74/100 because four of the six
+        // criteria had nothing to flag it on (no god class, no instanceof chain, no public
+        // field, no unclosed-brace finding surfaced) and defaulted to a clean 100 each.
+        Submission garbage = new Submission("solution Noo", "solution Noo", "class Garbage{", "solution Noo",
+                lldpractice.domain.SubmissionFormat.JAVA);
+        Feedback feedback = evaluate(garbage);
+
+        assertTrue(feedback.overallScore() < 60, "expected a clearly low score, got " + feedback.overallScore());
+        assertTrue(hasFinding(feedback, Severity.CRITICAL, "could not be fully parsed"));
+        assertTrue(hasFinding(feedback, Severity.MAJOR, "empty class"));
+        assertTrue(feedback.findings().stream().noneMatch(f -> f.severity() == Severity.POSITIVE
+                        && (f.criterionId().equals("extensibility") || f.criterionId().equals("encapsulation"))),
+                "an empty submission shouldn't be praised for avoiding smells it has no content to exhibit");
+    }
+
+    @Test
+    void pureGibberishWithNoJavaSyntaxAlsoScoresLow() {
+        // Regression test: unlike the unclosed-brace case above, text with no "class"/
+        // "interface" keyword at all produces zero parsed types and zero parser warnings,
+        // which used to let abstraction/responsibility default to a clean 100 since their
+        // checks were guarded by "only run if there's at least one type".
+        Submission gibberish = new Submission("agdgadhgwdyygwdywg", "agdgadhgwdyygwdywg",
+                "agdgadhgwdyygwdywg", "agdgadhgwdyygwdywg", lldpractice.domain.SubmissionFormat.JAVA);
+        Feedback feedback = evaluate(gibberish);
+
+        assertTrue(feedback.overallScore() < 60, "expected a clearly low score, got " + feedback.overallScore());
+        assertTrue(hasFinding(feedback, Severity.CRITICAL, "no classes, interfaces, enums or records"));
+        assertEquals(4, feedback.findings().stream()
+                .filter(f -> f.severity() == Severity.CRITICAL).count(),
+                "abstraction, responsibility, extensibility and encapsulation should each take a critical hit");
+    }
+
+    @Test
     void strongStrategyBasedDesignScoresAtLeast70() {
         Feedback feedback = evaluate(SampleSubmissions.strongStrategyBased());
         assertTrue(feedback.overallScore() >= 70, "expected >=70, got " + feedback.overallScore());

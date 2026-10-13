@@ -52,14 +52,58 @@ public final class StructuralEvaluator implements Evaluator {
         Submission submission = context.submission();
         DesignModel model = context.designModel();
 
+        evaluateParseability(model, findings);
         evaluateRequirementCoverage(problem, submission, model, findings);
-        evaluateAbstractions(model, findings);
-        evaluateResponsibility(model, findings);
-        evaluateExtensibility(model, submission, findings);
-        evaluateEncapsulation(model, findings);
+
+        if (model.types().isEmpty()) {
+            // Nothing parsed as a type at all (not even an unclosed brace to warn about, e.g.
+            // plain gibberish) -- there's no structure to run abstraction/responsibility/
+            // extensibility/encapsulation checks against, so each takes a direct critical hit
+            // instead of silently defaulting to a clean 100.
+            evaluateNoStructureFound(findings);
+        } else {
+            evaluateAbstractions(model, findings);
+            evaluateResponsibility(model, findings);
+            evaluateExtensibility(model, submission, findings);
+            evaluateEncapsulation(model, findings);
+        }
         evaluateReasoning(submission, findings);
 
         return findings;
+    }
+
+    private static final List<String> STRUCTURAL_CRITERIA =
+            List.of("abstraction", "responsibility", "extensibility", "encapsulation");
+
+    private void evaluateNoStructureFound(List<Finding> findings) {
+        for (String criterionId : STRUCTURAL_CRITERIA) {
+            findings.add(new Finding(criterionId, Severity.CRITICAL,
+                    "No classes, interfaces, enums or records found",
+                    "The submitted code doesn't contain any recognizable Java type declaration, so this criterion can't be evaluated.",
+                    "Add at least one class or interface that models part of this problem.",
+                    List.of(), FindingSource.DETERMINISTIC));
+        }
+    }
+
+    // ---- parseability -------------------------------------------------
+
+    /** If the parser couldn't fully make sense of the code (unbalanced braces, an incomplete
+     * type), that's not a style nitpick -- it means there's no reliable structure underneath
+     * for any other check to evaluate, so it's surfaced directly instead of being silently
+     * dropped (which previously let unparseable code slip through every other check untouched). */
+    private void evaluateParseability(DesignModel model, List<Finding> findings) {
+        int shown = 0;
+        for (String warning : model.warnings()) {
+            if (shown >= 3) {
+                break;
+            }
+            findings.add(new Finding("responsibility", Severity.CRITICAL,
+                    "Code could not be fully parsed",
+                    warning,
+                    "Make sure every type and method has a matching closing brace before submitting.",
+                    List.of(), FindingSource.DETERMINISTIC));
+            shown++;
+        }
     }
 
     // ---- requirement coverage -------------------------------------------------
@@ -144,7 +188,7 @@ public final class StructuralEvaluator implements Evaluator {
                 .anyMatch(type -> model.types().stream()
                         .anyMatch(other -> other != type && other.supertypes().stream()
                                 .anyMatch(s -> s.equalsIgnoreCase(type.name()))));
-        if (!model.types().isEmpty() && !anySharedSupertype) {
+        if (!anySharedSupertype) {
             findings.add(new Finding("abstraction", Severity.MAJOR,
                     "No shared abstraction between types",
                     "None of the submitted types are extended or implemented by another type, so variation "
@@ -204,7 +248,14 @@ public final class StructuralEvaluator implements Evaluator {
                             List.of(), FindingSource.DETERMINISTIC));
                 }
             }
-            if (type.kind() == TypeKind.CLASS && type.fieldCount() > 0 && type.methods().isEmpty()) {
+            if (type.kind() == TypeKind.CLASS && type.fieldCount() == 0 && type.methods().isEmpty()) {
+                findings.add(new Finding("responsibility", Severity.MAJOR,
+                        "Empty class: " + type.name(),
+                        type.name() + " has no fields and no methods -- there is no behaviour here yet.",
+                        "Give this class at least one field or method that does something toward the requirements.",
+                        List.of(), FindingSource.DETERMINISTIC));
+                anyMajor = true;
+            } else if (type.kind() == TypeKind.CLASS && type.fieldCount() > 0 && type.methods().isEmpty()) {
                 findings.add(new Finding("responsibility", Severity.INFO,
                         "Anemic class: " + type.name(),
                         type.name() + " has " + type.fieldCount() + " field(s) but no behaviour methods.",
@@ -262,7 +313,7 @@ public final class StructuralEvaluator implements Evaluator {
                     "A lookup table or a small set of Strategy objects usually scales better than repeated equality checks.",
                     List.of(), FindingSource.DETERMINISTIC));
         }
-        if (!anyMajor && !model.types().isEmpty()) {
+        if (!anyMajor && hasSubstance(model)) {
             findings.add(new Finding("extensibility", Severity.POSITIVE,
                     "No instanceof/switch-chain or high-coupling smells detected",
                     "The submitted types avoid heavy type-checking and excessive direct dependencies.",
@@ -286,7 +337,7 @@ public final class StructuralEvaluator implements Evaluator {
                 anyIssue = true;
             }
         }
-        if (!anyIssue && !model.types().isEmpty()) {
+        if (!anyIssue && hasSubstance(model)) {
             findings.add(new Finding("encapsulation", Severity.POSITIVE,
                     "No public mutable fields detected",
                     "Every submitted type keeps its state private or immutable.",
@@ -321,6 +372,13 @@ public final class StructuralEvaluator implements Evaluator {
                     "A sentence or two of real reasoning is far more useful than a placeholder.",
                     List.of(), FindingSource.DETERMINISTIC));
         }
+    }
+
+    /** True if the design has at least one field or method anywhere -- used to stop a POSITIVE
+     * finding ("no smells detected") from firing on a submission that has nothing to judge in
+     * the first place, which would otherwise read as false praise for an empty/near-empty class. */
+    private boolean hasSubstance(DesignModel model) {
+        return model.types().stream().anyMatch(t -> t.fieldCount() > 0 || !t.methods().isEmpty());
     }
 
     private int countOccurrences(String text, String needle) {
