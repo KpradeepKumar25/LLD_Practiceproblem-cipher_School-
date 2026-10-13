@@ -39,7 +39,13 @@ public final class JavaDesignExtractor implements DesignExtractor {
     );
 
     private static final Pattern METHOD_DECL = Pattern.compile(
-            "(public|private|protected)?\\s*(static\\s+)?(?:final\\s+)?(?:abstract\\s+)?(?:synchronized\\s+)?"
+            // The leading \s* (unconditional, not tied to the optional modifier group) matters:
+            // without it, Matcher.find()'s leftmost match starts at the indentation whitespace
+            // itself, the optional modifier group gets evaluated against that whitespace and
+            // locks in as empty, and "public"/"private"/"protected" silently gets absorbed into
+            // the return-type group instead -- meaning isPublic() was wrong for every indented
+            // method (i.e. almost all real code) until this was added.
+            "\\s*(public|private|protected)?\\s*(static\\s+)?(?:final\\s+)?(?:abstract\\s+)?(?:synchronized\\s+)?"
                     + "(?:<[^>{]*>\\s*)?"
                     + "([A-Za-z_][\\w.\\[\\]<>,\\s]*?)\\s+([A-Za-z_]\\w*)\\s*\\(([^)]*)\\)\\s*"
                     + "(?:throws\\s+[\\w.,\\s]+)?\\s*\\{"
@@ -284,6 +290,17 @@ public final class JavaDesignExtractor implements DesignExtractor {
                     if (end) {
                         break;
                     }
+                }
+            } else if (c == '@' && i + 1 < n && Character.isJavaIdentifierStart(source.charAt(i + 1))) {
+                // Blank out an annotation's '@Name' so it can never be mis-read as part of a
+                // method/field's return type -- without this, a lazy "type" group can swallow
+                // backward across "@Override\n" and the modifiers that follow it, which was
+                // silently reporting real public methods as non-public.
+                out.append(' ');
+                i++;
+                while (i < n && (Character.isJavaIdentifierPart(source.charAt(i)) || source.charAt(i) == '.')) {
+                    out.append(' ');
+                    i++;
                 }
             } else {
                 out.append(c);

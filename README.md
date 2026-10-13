@@ -1,5 +1,7 @@
 # LLD Practice Platform
 
+[![Build and test](https://github.com/KpradeepKumar25/LLD_Practiceproblem-cipher_School-/actions/workflows/build.yml/badge.svg)](https://github.com/KpradeepKumar25/LLD_Practiceproblem-cipher_School-/actions/workflows/build.yml)
+
 A focused MVP that lets a learner pick a Low-Level Design problem (Parking Lot, Elevator
 System, Vending Machine), design a solution, submit it, and get explainable, rubric-based
 feedback — then try again and see whether they actually improved.
@@ -194,8 +196,11 @@ classDiagram
 ## Limitations
 
 - The Java "parser" is a tolerant, regex/brace-matching extractor, not a real compiler front end.
-  It's deliberately lightweight (see `docs/DESIGN_NOTE.md`), and it can misjudge unusual
-  formatting (e.g. multiple fields on one line, annotations between modifiers and a type).
+  It's deliberately lightweight (see `docs/DESIGN_NOTE.md`). One known, tested limitation:
+  multiple fields declared on one line (`public int a, b, c;`) are read as a single field rather
+  than three (`JavaDesignExtractorTest.multipleFieldsDeclaredOnOneLineAreAKnownLimitation`) —
+  undercounts `fieldCount` slightly on a style most submissions don't use, without corrupting
+  anything else the evaluator relies on.
 - Only Java submissions are supported today; `ExtractorRegistry` is the seam for adding another
   format (e.g. a diagram) without touching any evaluator.
 - Attempts are in-memory by default (`InMemoryAttemptRepository`) and are lost on restart.
