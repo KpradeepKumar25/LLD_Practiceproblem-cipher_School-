@@ -2,22 +2,9 @@ package lldpractice.catalog;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static lldpractice.testsupport.JavaCompileAssert.assertCompiles;
 
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
 
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +15,7 @@ import lldpractice.domain.Finding;
 import lldpractice.domain.Problem;
 import lldpractice.domain.Severity;
 import lldpractice.domain.Submission;
+import lldpractice.domain.SubmissionFormat;
 import lldpractice.evaluation.EvaluationContext;
 import lldpractice.evaluation.EvaluationPipeline.PipelineResult;
 import lldpractice.evaluation.FeedbackBuilder;
@@ -36,7 +24,8 @@ import lldpractice.evaluation.StructuralEvaluator;
 /**
  * Validates the three hand-written Parking Lot samples against the real evaluator: the weak one
  * must trigger specific smells, and both strong ones (different vocabulary, different structure)
- * must still score well, proving the platform doesn't anchor on one model answer.
+ * must still score well, proving the platform doesn't anchor on one model answer. See
+ * {@link VendingMachineSampleSubmissionsTest} for the same contrast on a second problem.
  */
 class SampleSubmissionsTest {
 
@@ -66,7 +55,7 @@ class SampleSubmissionsTest {
         // criteria had nothing to flag it on (no god class, no instanceof chain, no public
         // field, no unclosed-brace finding surfaced) and defaulted to a clean 100 each.
         Submission garbage = new Submission("solution Noo", "solution Noo", "class Garbage{", "solution Noo",
-                lldpractice.domain.SubmissionFormat.JAVA);
+                SubmissionFormat.JAVA);
         Feedback feedback = evaluate(garbage);
 
         assertTrue(feedback.overallScore() < 60, "expected a clearly low score, got " + feedback.overallScore());
@@ -84,7 +73,7 @@ class SampleSubmissionsTest {
         // which used to let abstraction/responsibility default to a clean 100 since their
         // checks were guarded by "only run if there's at least one type".
         Submission gibberish = new Submission("agdgadhgwdyygwdywg", "agdgadhgwdyygwdywg",
-                "agdgadhgwdyygwdywg", "agdgadhgwdyygwdywg", lldpractice.domain.SubmissionFormat.JAVA);
+                "agdgadhgwdyygwdywg", "agdgadhgwdyygwdywg", SubmissionFormat.JAVA);
         Feedback feedback = evaluate(gibberish);
 
         assertTrue(feedback.overallScore() < 60, "expected a clearly low score, got " + feedback.overallScore());
@@ -134,47 +123,5 @@ class SampleSubmissionsTest {
     private boolean hasFinding(Feedback feedback, Severity severity, String titleContains) {
         return feedback.findings().stream().anyMatch(f -> f.severity() == severity
                 && f.title().toLowerCase().contains(titleContains.toLowerCase()));
-    }
-
-    private void assertCompiles(String code) throws Exception {
-        String typeName = findPublicTypeName(code);
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        Path outputDir = Files.createTempDirectory("lldpractice-compile-test");
-        try (StandardJavaFileManager fileManager =
-                     compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8)) {
-            JavaFileObject source = new StringJavaFile(typeName, code);
-            JavaCompiler.CompilationTask task = compiler.getTask(null, fileManager, diagnostics,
-                    List.of("-d", outputDir.toString()), null, List.of(source));
-            boolean success = task.call();
-            List<String> errors = diagnostics.getDiagnostics().stream()
-                    .filter(d -> d.getKind() == Diagnostic.Kind.ERROR)
-                    .map(Object::toString)
-                    .toList();
-            assertTrue(success && errors.isEmpty(), "Compilation failed:\n" + String.join("\n", errors));
-        }
-    }
-
-    private String findPublicTypeName(String code) {
-        Matcher m = Pattern.compile("public\\s+(?:final\\s+)?(?:abstract\\s+)?(?:class|interface|enum|record)\\s+(\\w+)")
-                .matcher(code);
-        if (m.find()) {
-            return m.group(1);
-        }
-        throw new IllegalStateException("No public type found in sample code");
-    }
-
-    private static final class StringJavaFile extends SimpleJavaFileObject {
-        private final String code;
-
-        StringJavaFile(String name, String code) {
-            super(URI.create("string:///" + name + ".java"), JavaFileObject.Kind.SOURCE);
-            this.code = code;
-        }
-
-        @Override
-        public CharSequence getCharContent(boolean ignoreEncodingErrors) {
-            return code;
-        }
     }
 }

@@ -89,3 +89,78 @@ Once that approach was replaced with the degraded-flag rule, nothing called `ful
 **Why:** Per the project's own stated engineering standard (no dead code, no speculative
 abstractions), a public method with zero callers is a maintenance liability, not a convenience —
 easy to re-add later if an actual caller shows up.
+
+## 7. Manual testing found three real scoring bugs the unit tests missed
+
+**What happened:** After the initial build, manually submitting adversarial input through the
+running UI (an unclosed brace, pure gibberish with no Java keywords at all, a mix of both)
+revealed that `StructuralEvaluator` scored these at 74, 74, and 49 out of 100 — far too generous.
+The root cause: several checks (god class, instanceof chain, public field, "is any abstraction
+shared") only fire when there's *something* to flag; an empty or unparseable submission trivially
+passed all of them and defaulted to a clean 100 on 4 of 6 criteria.
+
+**Decision:** Accepted the diagnosis each time and fixed `StructuralEvaluator` directly: parser
+warnings now become findings instead of being silently dropped; a type with zero fields and zero
+methods is flagged `MAJOR`, not ignored; and when *no* type parses at all, all four structural
+criteria take an explicit `CRITICAL` hit instead of defaulting to 100. Two regression tests
+(`emptyOrGarbageSubmissionScoresLowAndIsntFalselyPraised`,
+`pureGibberishWithNoJavaSyntaxAlsoScoresLow`) lock this in.
+
+**Why:** This is the clearest example in the whole session of AI-assisted work needing a human
+in the loop: the existing automated tests all used realistic (if flawed) submissions, so nobody
+had tried "what if the input is just noise" until a person did it by hand. The fix came from
+reading the evaluator's actual logic and finding the gap, not from any model "guessing better" —
+which is also why no LLM key or model training was ever relevant to this, despite it looking at
+first like an AI-quality problem.
+
+---
+
+## Appendix: a real prompt/response pair
+
+For transparency, here is an actual prompt `PromptBuilder` generated for the weak Vending
+Machine sample, and the actual (trimmed) response `MockLlmClient` returned for it — not a
+fabricated example, captured by running the real code:
+
+**Prompt (excerpt — full prompt also includes the complete requirements list and code):**
+```
+You are reviewing a learner's Low-Level Design (LLD) practice submission.
+
+IMPORTANT: Multiple different designs can be equally valid for the same problem. Judge whether
+THIS design is internally sound, not whether it matches any particular model answer.
+
+Problem: Vending Machine
+...
+A deterministic rule-based reviewer already found these issues. Do NOT repeat them; focus on
+things rules cannot judge (whether responsibilities are well placed, whether the reasoning in
+the trade-offs holds up, whether abstractions make sense):
+- [MINOR] Concept described but not implemented: a pluggable payment strategy
+- [MAJOR] No shared abstraction between types
+- [MAJOR] Possible god class: VendingMachine
+- [MAJOR] Empty class: Coin
+- [MAJOR] Empty class: Card
+- [MAJOR] Empty class: Note
+- [MAJOR] Type-checking via instanceof: VendingMachine
+- [MAJOR] Public mutable field(s) in VendingMachine
+...
+Respond with STRICT JSON ONLY, no markdown fences, no commentary, matching exactly this shape: ...
+Rules: never use severity CRITICAL (use MAJOR instead). Give at most 6 findings. Every finding
+must cite real evidence from the submission above, not a generic template.
+```
+
+**Mock response (offline, no API key):**
+```json
+{"summary":"Offline heuristic review (no live AI model was called). This is a conservative,
+low-confidence pass over what was written, not a full design review.",
+ "findings":[{"criterionId":"abstraction","severity":"INFO",
+   "title":"Heuristic note on class outline",
+   "evidence":"One VendingMachine class handles items, payments, balance and stock.",
+   "suggestion":"Double-check that each listed class has exactly one clear responsibility.",
+   "alternatives":[]}]}
+```
+
+Two things worth noting from this real example: the prompt hands the LLM the deterministic
+findings already found so it doesn't repeat "god class" or "public field" — it's explicitly
+steered toward judgement calls (abstraction, responsibility, reasoning) instead. And the mock
+response is deliberately weak tea (`INFO` severity, a generic double-check suggestion) — that's
+the honest ceiling of a heuristic with no real understanding; set `ANTHROPIC_API_KEY` to get a
+genuine model response in its place instead.

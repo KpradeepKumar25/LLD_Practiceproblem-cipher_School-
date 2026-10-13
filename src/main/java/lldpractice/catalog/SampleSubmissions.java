@@ -4,10 +4,12 @@ import lldpractice.domain.Submission;
 import lldpractice.domain.SubmissionFormat;
 
 /**
- * Hand-written Parking Lot submissions used both for the "prefill" demo links in the web UI and
- * for tests. {@link #strongStrategyBased()} and {@link #strongRecordBased()} use deliberately
- * different vocabulary and structure (interfaces vs. an abstract class + records) to prove the
- * platform rewards more than one valid design, not a single model answer.
+ * Hand-written sample submissions used both for the "prefill" demo links in the web UI and for
+ * tests, across two problems. {@link #strongStrategyBased()} and {@link #strongRecordBased()}
+ * use deliberately different vocabulary and structure (interfaces vs. an abstract class +
+ * records) to prove the platform rewards more than one valid design, not a single model answer;
+ * {@link #vendingWeak()} and {@link #vendingStrong()} repeat that same weak/strong contrast for
+ * a second problem so the evaluator's behaviour isn't shown on only one.
  */
 public final class SampleSubmissions {
 
@@ -342,6 +344,184 @@ public final class SampleSubmissions {
                 + "a new Bay rather than mutating one, which makes state changes explicit at the call site at the "
                 + "cost of replacing entries in the list on every park()/exit(). Used an abstract class for Vehicle "
                 + "instead of an interface since plate storage is shared, identical logic across vehicle types.";
+        return new Submission(assumptions, outline, code, tradeOffs, SubmissionFormat.JAVA);
+    }
+
+    /** A deliberately weak Vending Machine submission: one class doing everything, public
+     * mutable fields, and an instanceof chain for payment type instead of a shared abstraction. */
+    public static Submission vendingWeak() {
+        String code = """
+                import java.util.ArrayList;
+                import java.util.List;
+
+                public class VendingMachine {
+                    public List<Object> items = new ArrayList<>();
+                    public List<Object> payments = new ArrayList<>();
+                    public double balance;
+                    public int stock;
+                    public String status;
+
+                    public void addItem(Object item) {
+                        items.add(item);
+                    }
+
+                    public boolean pay(Object payment, double amount) {
+                        if (payment instanceof Coin) {
+                            balance += amount;
+                        } else if (payment instanceof Card) {
+                            balance += amount;
+                        } else if (payment instanceof Note) {
+                            balance += amount;
+                        }
+                        return true;
+                    }
+
+                    public Object dispense(int slot) {
+                        if (stock <= 0) {
+                            return null;
+                        }
+                        stock--;
+                        return items.get(slot);
+                    }
+
+                    public void refund() {
+                        balance = 0;
+                    }
+
+                    public void setStatus(String s) {
+                        status = s;
+                    }
+
+                    public double getBalance() {
+                        return balance;
+                    }
+
+                    public void restock(int n) {
+                        stock += n;
+                    }
+                }
+
+                class Coin {}
+                class Card {}
+                class Note {}
+                """;
+        return new Submission(
+                "none really",
+                "One VendingMachine class handles items, payments, balance and stock.",
+                code,
+                "",
+                SubmissionFormat.JAVA);
+    }
+
+    /** A strong Vending Machine submission using a Payment strategy interface and a dedicated
+     * Inventory/Slot model, deliberately different vocabulary/structure from the weak sample. */
+    public static Submission vendingStrong() {
+        String code = """
+                import java.util.ArrayList;
+                import java.util.HashMap;
+                import java.util.List;
+                import java.util.Map;
+                import java.util.Optional;
+
+                interface PaymentMethod {
+                    boolean accept(double amountOwed);
+                }
+
+                final class CoinPayment implements PaymentMethod {
+                    private final double inserted;
+                    CoinPayment(double inserted) { this.inserted = inserted; }
+                    public boolean accept(double amountOwed) { return inserted >= amountOwed; }
+                }
+
+                final class CardPayment implements PaymentMethod {
+                    private final boolean approved;
+                    CardPayment(boolean approved) { this.approved = approved; }
+                    public boolean accept(double amountOwed) { return approved; }
+                }
+
+                final class Product {
+                    private final String name;
+                    private final double price;
+                    Product(String name, double price) { this.name = name; this.price = price; }
+                    String getName() { return name; }
+                    double getPrice() { return price; }
+                }
+
+                final class Slot {
+                    private final String code;
+                    private final Product product;
+                    private int quantity;
+
+                    Slot(String code, Product product, int quantity) {
+                        this.code = code;
+                        this.product = product;
+                        this.quantity = quantity;
+                    }
+
+                    boolean inStock() {
+                        return quantity > 0;
+                    }
+
+                    void dispenseOne() {
+                        quantity--;
+                    }
+
+                    String getCode() { return code; }
+                    Product getProduct() { return product; }
+                    int getQuantity() { return quantity; }
+                }
+
+                final class Inventory {
+                    private final Map<String, Slot> slots = new HashMap<>();
+
+                    void addSlot(Slot slot) {
+                        slots.put(slot.getCode(), slot);
+                    }
+
+                    Optional<Slot> find(String code) {
+                        return Optional.ofNullable(slots.get(code));
+                    }
+
+                    List<Slot> all() {
+                        return new ArrayList<>(slots.values());
+                    }
+                }
+
+                public final class VendingMachine {
+                    private final Inventory inventory;
+
+                    public VendingMachine(Inventory inventory) {
+                        this.inventory = inventory;
+                    }
+
+                    public Optional<Product> purchase(String slotCode, PaymentMethod payment) {
+                        Optional<Slot> slot = inventory.find(slotCode);
+                        if (slot.isEmpty() || !slot.get().inStock()) {
+                            return Optional.empty();
+                        }
+                        Product product = slot.get().getProduct();
+                        if (!payment.accept(product.getPrice())) {
+                            return Optional.empty();
+                        }
+                        slot.get().dispenseOne();
+                        return Optional.of(product);
+                    }
+
+                    public List<Slot> listSlots() {
+                        return inventory.all();
+                    }
+                }
+                """;
+        String assumptions = "Each slot holds one product and a quantity. A payment is only ever checked once, "
+                + "against the product's price, at purchase time -- no partial payments or change-making modelled.";
+        String outline = "PaymentMethod (interface) <- CoinPayment, CardPayment, each deciding for itself whether "
+                + "the amount owed is covered. Product is a plain price-carrying value. Slot pairs a Product with "
+                + "remaining quantity. Inventory holds all slots by code. VendingMachine coordinates purchase() and "
+                + "exposes listSlots() for display.";
+        String tradeOffs = "Chose a PaymentMethod interface so a new payment type (e.g. mobile wallet) is a new "
+                + "class, not a change to VendingMachine or Slot. Trade-off: VendingMachine doesn't know or care how "
+                + "payment was validated, which also means it can't itself enforce cross-payment-method business "
+                + "rules (e.g. a minimum card amount) without each implementation duplicating that check.";
         return new Submission(assumptions, outline, code, tradeOffs, SubmissionFormat.JAVA);
     }
 }

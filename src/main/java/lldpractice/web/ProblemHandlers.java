@@ -74,6 +74,10 @@ public final class ProblemHandlers {
                     .append("<a href='/problems/parking-lot/prefill/weak'>Prefill a weak example</a> or ")
                     .append("<a href='/problems/parking-lot/prefill/good-a'>a strong example (Strategy interfaces)</a> or ")
                     .append("<a href='/problems/parking-lot/prefill/good-b'>a strong example (abstract class + records)</a>.</p>");
+        } else if (problem.id().equals("vending-machine")) {
+            body.append("<p class='muted' style='margin-top:14px'>Want to see the loop in action first? ")
+                    .append("<a href='/problems/vending-machine/prefill/weak'>Prefill a weak example</a> or ")
+                    .append("<a href='/problems/vending-machine/prefill/good-a'>a strong example (Payment strategy interface)</a>.</p>");
         }
 
         List<Attempt> history = practiceService.historyForProblem(learner, problem.id());
@@ -101,14 +105,17 @@ public final class ProblemHandlers {
 
     public void prefill(HttpExchange exchange, Map<String, String> params) throws IOException {
         String learner = Learner.of(exchange);
+        String problemId = params.get("id");
         String kind = params.get("kind");
-        Submission submission = switch (kind) {
-            case "weak" -> SampleSubmissions.weak();
-            case "good-a" -> SampleSubmissions.strongStrategyBased();
-            case "good-b" -> SampleSubmissions.strongRecordBased();
+        Submission submission = switch (problemId + ":" + kind) {
+            case "parking-lot:weak" -> SampleSubmissions.weak();
+            case "parking-lot:good-a" -> SampleSubmissions.strongStrategyBased();
+            case "parking-lot:good-b" -> SampleSubmissions.strongRecordBased();
+            case "vending-machine:weak" -> SampleSubmissions.vendingWeak();
+            case "vending-machine:good-a" -> SampleSubmissions.vendingStrong();
             default -> new Submission("", "", "", "", SubmissionFormat.JAVA);
         };
-        Attempt attempt = practiceService.startAttempt(learner, "parking-lot", submission);
+        Attempt attempt = practiceService.startAttempt(learner, problemId, submission);
         HttpUtil.redirect(exchange, "/attempts/" + attempt.id());
     }
 }

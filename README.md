@@ -31,7 +31,8 @@ whether the stated trade-offs hold up) — see `docs/DESIGN_NOTE.md` for the ful
   `ANTHROPIC_API_KEY` to use the real model instead.
 - **Multiple valid solutions, not one model answer**: expected design concepts (e.g. "a parking
   spot") accept several names (`Spot`, `Slot`, `Bay`, ...). Two Parking Lot sample solutions with
-  completely different structure (interfaces vs. an abstract class + records) both score 100.
+  completely different structure (interfaces vs. an abstract class + records) both score 100, and
+  a weak/strong pair for Vending Machine repeats the same proof on a second problem.
 - **Attempt lifecycle**: Draft → Submitted → Evaluating → Completed / Partially completed / Failed,
   with retry from a failed or partial attempt.
 - **History & comparison**: every attempt is kept; "Compare with previous" shows which
@@ -40,7 +41,8 @@ whether the stated trade-offs hold up) — see `docs/DESIGN_NOTE.md` for the ful
 
 ## Quick start
 
-No API key needed. Requires Java 17+ and Maven.
+No API key needed. Requires Java 17+ and Maven. CI (`.github/workflows/build.yml`) runs the full
+test suite and builds the jar on every push, so `main`/`master` is always known to build clean.
 
 ```bash
 # Windows (PowerShell / cmd)
@@ -100,7 +102,8 @@ src/main/java/lldpractice/
   repository/   ProblemRepository / AttemptRepository interfaces + in-memory and
                 JSON-file implementations
   service/      PracticeService (attempt lifecycle), EvaluationService (async evaluation)
-  catalog/      The 3 problems + hand-written Parking Lot sample submissions
+  catalog/      The 3 problems + hand-written weak/strong sample submissions
+                (Parking Lot: 3 samples; Vending Machine: 2 samples)
   web/          Hand-rolled router, HTML page handlers, JSON API, HttpServer wiring
   util/         Json (dependency-free JSON read/write)
   App.java      Composition root / main()
